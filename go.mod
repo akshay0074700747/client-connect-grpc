@@ -6,10 +6,10 @@ require github.com/graphql-go/graphql v0.8.1 // direct
 
 require (
 	google.golang.org/grpc v1.60.1
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/protobuf v1.32.0
 )
 
-require github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231221073504-9f9d46463dd2 // indirect
+require github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231226084919-d5a5f8433602 // indirect
 
 require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible

@@ -8,6 +8,12 @@ github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231220053625-
 github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231220053625-a195296e297c/go.mod h1:2FU2aQVDr5/DeGHYeEiHbj6O9IESietoTA+3jiYeLQ0=
 github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231221073504-9f9d46463dd2 h1:RaCcZcvLPsafp8NgBQO1t501D9cN5JXVKgFZ0NSs+Zs=
 github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231221073504-9f9d46463dd2/go.mod h1:2FU2aQVDr5/DeGHYeEiHbj6O9IESietoTA+3jiYeLQ0=
+github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231226053402-704e91cac11f h1:cOQ37Dq9nzU5VR2ojcFW2HQLuspM3t0KK6U0anaFBMA=
+github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231226053402-704e91cac11f/go.mod h1:2FU2aQVDr5/DeGHYeEiHbj6O9IESietoTA+3jiYeLQ0=
+github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231226080135-0bb57558de4e h1:0kWUeKE2169H4zGGTaPEgZfUOtDobbYTe1QEwzW/5tY=
+github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231226080135-0bb57558de4e/go.mod h1:2FU2aQVDr5/DeGHYeEiHbj6O9IESietoTA+3jiYeLQ0=
+github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231226084919-d5a5f8433602 h1:xVdHhpOjPh4AOdjvPRDdW0lylPzWy2tjdJ2QLzGP9YQ=
+github.com/akshay0074700747/proto-files-for-microservices v0.0.0-20231226084919-d5a5f8433602/go.mod h1:2FU2aQVDr5/DeGHYeEiHbj6O9IESietoTA+3jiYeLQ0=
 github.com/golang-jwt/jwt v3.2.2+incompatible h1:IfV12K8xAKAnZqdXVzCZ+TOjboZ2keLg81eXfW3O+oY=
 github.com/golang-jwt/jwt v3.2.2+incompatible/go.mod h1:8pz2t5EyA70fFQQSrl6XZXzqecmYZeUEB8OUGHkxJ+I=
 github.com/golang/protobuf v1.5.0/go.mod h1:FsONVRAS9T7sI+LIUmWTfcYkHO4aIWwzhcaSAoJOfIk=
@@ -49,3 +55,5 @@ google.golang.org/protobuf v1.26.0-rc.1/go.mod h1:jlhhOSvTdKEhbULTjvd4ARK9grFBp0
 google.golang.org/protobuf v1.26.0/go.mod h1:9q0QmTI4eRPtz6boOQmLYwt+qCgq0jsYwAQnmE0givc=
 google.golang.org/protobuf v1.31.0 h1:g0LDEJHgrBl9N9r17Ru3sqWhkIx2NB67okBHPwC7hs8=
 google.golang.org/protobuf v1.31.0/go.mod h1:HV8QOd/L58Z+nl8r43ehVNZIU/HEI6OcFqwMG9pJV4I=
+google.golang.org/protobuf v1.32.0 h1:pPC6BG5ex8PDFnkbrGU3EixyhKcQ2aDuBS36lqK/C7I=
+google.golang.org/protobuf v1.32.0/go.mod h1:c6P6GXX6sHbq/GpV6MGZEdwhWPcYBgnhAHhKbcUYpos=

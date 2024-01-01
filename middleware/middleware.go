@@ -2,26 +2,20 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/akshay0074700747/client-connect/authorize"
-	"github.com/akshay0074700747/proto-files-for-microservices/pb"
 	"github.com/graphql-go/graphql"
 )
 
 var (
-	usersrvConn pb.UserServiceClient
-	secret      []byte
+	secret []byte
 )
 
 func InitMiddlewareSecret(secretString string) {
 	secret = []byte(secretString)
-}
-
-func InitializeMiddleware(usrconn pb.UserServiceClient) {
-	usersrvConn = usrconn
 }
 
 func ClientMiddleware(next graphql.FieldResolveFn) graphql.FieldResolveFn {
@@ -36,6 +30,8 @@ func ClientMiddleware(next graphql.FieldResolveFn) graphql.FieldResolveFn {
 			return nil, fmt.Errorf("you are not logged in")
 		}
 
+		ctx := p.Context
+
 		token := cookie.Value
 		auth, err := authorize.ValidateToken(token, secret)
 		if err != nil {
@@ -43,20 +39,16 @@ func ClientMiddleware(next graphql.FieldResolveFn) graphql.FieldResolveFn {
 			return nil, err
 		}
 
-		userID := auth["userID"].(string)
-		userIDval, err := strconv.ParseUint(userID, 10, 64)
-		if err != nil {
-			fmt.Println(err.Error())
-			return nil, err
+		userIDval := auth["userID"].(uint)
+
+		if userIDval < 1 {
+			return nil, errors.New("userID is not valid")
 		}
 
-		user, err := usersrvConn.GetUser(context.Background(), &pb.UserRequest{Id: uint32(userIDval)})
-		if err != nil {
-			return nil, err
-		}
-		if user.Name == "" {
-			return nil, fmt.Errorf("user is not signed up")
-		}
+		ctx = context.WithValue(ctx, "userID", userIDval)
+
+		p.Context = ctx
+
 		return next(p)
 	}
 }
@@ -73,6 +65,8 @@ func AdminMiddleware(next graphql.FieldResolveFn) graphql.FieldResolveFn {
 			return nil, fmt.Errorf("you are not logged in")
 		}
 
+		ctx := p.Context
+
 		token := cookie.Value
 		auth, err := authorize.ValidateToken(token, secret)
 		if err != nil {
@@ -81,17 +75,91 @@ func AdminMiddleware(next graphql.FieldResolveFn) graphql.FieldResolveFn {
 		}
 
 		userIDval := auth["userID"].(uint)
+		if userIDval < 1 {
+			return nil, fmt.Errorf("invalid userID")
+		}
+		if !auth["isadmin"].(bool) {
+			return nil, fmt.Errorf("you are not an admin to perform this action")
+		}
 
-		user, err := usersrvConn.GetUser(context.Background(), &pb.UserRequest{Id: uint32(userIDval)})
+		ctx = context.WithValue(ctx, "userID", userIDval)
+
+		p.Context = ctx
+
+		return next(p)
+	}
+}
+
+func SuAdminMiddleware(next graphql.FieldResolveFn) graphql.FieldResolveFn {
+	return func(p graphql.ResolveParams) (interface{}, error) {
+
+		r := p.Context.Value("request").(*http.Request)
+		cookie, err := r.Cookie("jwtToken")
 		if err != nil {
 			return nil, err
 		}
-		if user.Name == "" {
-			return nil, fmt.Errorf("user is not signed up")
+		if cookie == nil {
+			return nil, fmt.Errorf("you are not logged in")
 		}
-		if !user.IsAdmin {
-			return nil, fmt.Errorf("you are not an admin to perform this action")
+
+		ctx := p.Context
+
+		token := cookie.Value
+		auth, err := authorize.ValidateToken(token, secret)
+		if err != nil {
+			fmt.Println(err.Error())
+			return nil, err
 		}
+
+		userIDval := auth["userID"].(uint)
+		if userIDval < 1 {
+			return nil, fmt.Errorf("invalid userID")
+		}
+		if !auth["issuadmin"].(bool) {
+			return nil, fmt.Errorf("you are not an super admin to perform this action")
+		}
+
+		ctx = context.WithValue(ctx, "userID", userIDval)
+
+		p.Context = ctx
+
+		return next(p)
+	}
+}
+
+func SuAdminOrAdminMiddleware(next graphql.FieldResolveFn) graphql.FieldResolveFn {
+	return func(p graphql.ResolveParams) (interface{}, error) {
+
+		r := p.Context.Value("request").(*http.Request)
+		cookie, err := r.Cookie("jwtToken")
+		if err != nil {
+			return nil, err
+		}
+		if cookie == nil {
+			return nil, fmt.Errorf("you are not logged in")
+		}
+
+		ctx := p.Context
+
+		token := cookie.Value
+		auth, err := authorize.ValidateToken(token, secret)
+		if err != nil {
+			fmt.Println(err.Error())
+			return nil, err
+		}
+
+		userIDval := auth["userID"].(uint)
+		if userIDval < 1 {
+			return nil, fmt.Errorf("invalid userID")
+		}
+		if !auth["issuadmin"].(bool) && !auth["isadmin"].(bool) {
+			return nil, fmt.Errorf("you are not an admin or suadmin to perform this action")
+		}
+
+		ctx = context.WithValue(ctx, "userID", userIDval)
+
+		p.Context = ctx
+
 		return next(p)
 	}
 }

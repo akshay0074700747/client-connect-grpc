@@ -41,11 +41,27 @@ var UserType = graphql.NewObject(
 				Type: graphql.Int,
 			},
 
+			"email": &graphql.Field{
+				Type: graphql.String,
+			},
+
+			"password": &graphql.Field{
+				Type: graphql.String,
+			},
+
+			"mobile": &graphql.Field{
+				Type: graphql.String,
+			},
+
 			"name": &graphql.Field{
 				Type: graphql.String,
 			},
 
 			"isAdmin": &graphql.Field{
+				Type: graphql.Boolean,
+			},
+
+			"isSuAdmin": &graphql.Field{
 				Type: graphql.Boolean,
 			},
 		},
@@ -102,12 +118,23 @@ var RootQuery = graphql.NewObject(
 		Fields: graphql.Fields{
 			"users": &graphql.Field{
 				Type: graphql.NewList(UserType),
-				Resolve: middleware.AdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+				Resolve: middleware.SuAdminOrAdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 					users, err := UsersrvConn.GetAllUsersResponce(context.Background(), &emptypb.Empty{})
 					if err != nil {
 						fmt.Println(err.Error())
 					}
-					return users.Users, nil
+					return users.Users, err
+				}),
+			},
+
+			"admins": &graphql.Field{
+				Type: graphql.NewList(UserType),
+				Resolve: middleware.SuAdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+					admins, err := UsersrvConn.GetAllAdminsResponce(context.Background(), &emptypb.Empty{})
+					if err != nil {
+						fmt.Println(err.Error())
+					}
+					return admins.Users, err
 				}),
 			},
 
@@ -118,38 +145,34 @@ var RootQuery = graphql.NewObject(
 						Type: graphql.NewNonNull(graphql.Int),
 					},
 				},
-				Resolve: middleware.AdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+				Resolve: middleware.SuAdminOrAdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 					return UsersrvConn.GetUser(context.Background(), &pb.UserRequest{Id: uint32(p.Args["id"].(int))})
+				}),
+			},
+			"admin": &graphql.Field{
+				Type: UserType,
+				Args: graphql.FieldConfigArgument{
+					"id": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.Int),
+					},
+				},
+				Resolve: middleware.SuAdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+					return UsersrvConn.GetAdmin(context.Background(), &pb.UserRequest{Id: uint32(p.Args["id"].(int))})
 				}),
 			},
 			"userDetails": &graphql.Field{
 				Type: UserType,
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					r := p.Context.Value("request").(*http.Request)
-					cookie, err := r.Cookie("jwtToken")
-					if err != nil {
-						return nil, err
-					}
-					if cookie == nil {
-						return nil, fmt.Errorf("you are not logged in")
-					}
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
-					token := cookie.Value
-					auth, err := authorize.ValidateToken(token, Secret)
-					if err != nil {
-						fmt.Println(err.Error())
-						return nil, err
-					}
-
-					userIDval := auth["userID"].(uint)
+					userIDval := p.Context.Value("userID").(uint)
 
 					user, err := UsersrvConn.GetUser(context.Background(), &pb.UserRequest{Id: uint32(userIDval)})
 					if err != nil {
-						return nil, err
+						fmt.Println(err.Error())
 					}
 
 					return user, err
-				},
+				}),
 			},
 			"orders": &graphql.Field{
 				Type: graphql.NewList(OrderType),
@@ -174,6 +197,7 @@ var RootQuery = graphql.NewObject(
 					r := p.Context.Value("request").(*http.Request)
 					cookie, err := r.Cookie("jwtToken")
 					if err != nil {
+						fmt.Println(err.Error())
 						return nil, err
 					}
 					if cookie == nil {
@@ -235,29 +259,39 @@ var Mutation = graphql.NewObject(
 	graphql.ObjectConfig{
 		Name: "Mutation",
 		Fields: graphql.Fields{
-			"addUser": &graphql.Field{
+			"signup": &graphql.Field{
 				Type: UserType,
 				Args: graphql.FieldConfigArgument{
 					"name": &graphql.ArgumentConfig{
 						Type: graphql.NewNonNull(graphql.String),
 					},
-					"isAdmin": &graphql.ArgumentConfig{
-						Type: graphql.NewNonNull(graphql.Boolean),
+					"email": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"mobile": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"password": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
 					},
 				},
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					user, err := UsersrvConn.AddUser(context.Background(), &pb.AddUserRequest{
-						Name:    p.Args["name"].(string),
-						IsAdmin: p.Args["isAdmin"].(bool),
+					user, err := UsersrvConn.SignupUser(context.Background(), &pb.SignupUserRequest{
+						Name:     p.Args["name"].(string),
+						Email:    p.Args["email"].(string),
+						Password: p.Args["password"].(string),
+						Mobile:   p.Args["mobile"].(string),
 					})
 					if err != nil {
+						fmt.Println(err.Error())
 						return nil, err
 					}
 
 					w := p.Context.Value("httpResponseWriter").(http.ResponseWriter)
 
-					tokenString, err := authorize.GenerateJwt(uint(user.Id), user.IsAdmin, Secret)
+					tokenString, err := authorize.GenerateJwt(uint(user.Id), user.IsAdmin, user.IsSuAdmin, Secret)
 					if err != nil {
+						fmt.Println(err.Error())
 						return nil, err
 					}
 
@@ -267,10 +301,155 @@ var Mutation = graphql.NewObject(
 						Path:  "/",
 					})
 
-					fmt.Println(user.Id)
-					fmt.Println(user.Name)
 					return user, nil
 				},
+			},
+			"loginUser": &graphql.Field{
+				Type: UserType,
+				Args: graphql.FieldConfigArgument{
+					"email": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"password": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+				},
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					user, err := UsersrvConn.LoginUser(context.Background(), &pb.LoginRequest{
+						Email:     p.Args["email"].(string),
+						Password:  p.Args["password"].(string),
+						IsAdmin:   false,
+						IsSuAdmin: false,
+					})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+
+					w := p.Context.Value("httpResponseWriter").(http.ResponseWriter)
+
+					tokenString, err := authorize.GenerateJwt(uint(user.Id), false, false, Secret)
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+
+					http.SetCookie(w, &http.Cookie{
+						Name:  "jwtToken",
+						Value: tokenString,
+						Path:  "/",
+					})
+
+					return user, nil
+				},
+			},
+			"loginAdmin": &graphql.Field{
+				Type: UserType,
+				Args: graphql.FieldConfigArgument{
+					"email": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"password": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+				},
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					user, err := UsersrvConn.LoginUser(context.Background(), &pb.LoginRequest{
+						Email:     p.Args["email"].(string),
+						Password:  p.Args["password"].(string),
+						IsAdmin:   true,
+						IsSuAdmin: false,
+					})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+
+					w := p.Context.Value("httpResponseWriter").(http.ResponseWriter)
+
+					tokenString, err := authorize.GenerateJwt(uint(user.Id), true, false, Secret)
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+
+					http.SetCookie(w, &http.Cookie{
+						Name:  "jwtToken",
+						Value: tokenString,
+						Path:  "/",
+					})
+
+					return user, nil
+				},
+			},
+			"loginSuperAdmin": &graphql.Field{
+				Type: UserType,
+				Args: graphql.FieldConfigArgument{
+					"email": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"password": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+				},
+				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+					user, err := UsersrvConn.LoginUser(context.Background(), &pb.LoginRequest{
+						Email:     p.Args["email"].(string),
+						Password:  p.Args["password"].(string),
+						IsAdmin:   false,
+						IsSuAdmin: true,
+					})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+
+					w := p.Context.Value("httpResponseWriter").(http.ResponseWriter)
+
+					tokenString, err := authorize.GenerateJwt(uint(user.Id), false, true, Secret)
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+
+					http.SetCookie(w, &http.Cookie{
+						Name:  "jwtToken",
+						Value: tokenString,
+						Path:  "/",
+					})
+
+					return user, nil
+				},
+			},
+			"addAdmin": &graphql.Field{
+				Type: UserType,
+				Args: graphql.FieldConfigArgument{
+					"name": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"email": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"mobile": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+					"password": &graphql.ArgumentConfig{
+						Type: graphql.NewNonNull(graphql.String),
+					},
+				},
+				Resolve: middleware.SuAdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+					admin, err := UsersrvConn.AddAdmin(context.Background(), &pb.SignupUserRequest{
+						Name:     p.Args["name"].(string),
+						Email:    p.Args["email"].(string),
+						Password: p.Args["password"].(string),
+						Mobile:   p.Args["mobile"].(string),
+					})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+					return admin, nil
+				}),
 			},
 			"addOrder": &graphql.Field{
 				Type: OrderType,
@@ -325,10 +504,10 @@ var Mutation = graphql.NewObject(
 						Type: graphql.NewNonNull(graphql.String),
 					},
 					"price": &graphql.ArgumentConfig{
-						Type: graphql.Int,
+						Type: graphql.NewNonNull(graphql.Int),
 					},
 					"stock": &graphql.ArgumentConfig{
-						Type: graphql.Int,
+						Type: graphql.NewNonNull(graphql.Int),
 					},
 				},
 				Resolve: middleware.AdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
@@ -375,9 +554,3 @@ var Schema, _ = graphql.NewSchema(graphql.SchemaConfig{
 	Query:    RootQuery,
 	Mutation: Mutation,
 })
-
-/*
-Now i have to implement login and logout
-i have to check wheather the increment and decrement stock works and also to chek the orders of the user
-
-*/

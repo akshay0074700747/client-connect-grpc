@@ -48,7 +48,6 @@ func main() {
 
 	graaph.Initialize(userRes, orderRes, productRes)
 	graaph.RetrieveSecret(secretString)
-	middleware.InitializeMiddleware(userRes)
 	middleware.InitMiddlewareSecret(secretString)
 
 	// h := handler.New(&handler.Config{
