@@ -16,6 +16,8 @@ var (
 	UsersrvConn  pb.UserServiceClient
 	OrdersConn   pb.OrderServiceClient
 	ProductsConn pb.ProductServiceClient
+	CartConn     pb.CartServiceClient
+	WishlistConn pb.WishlistServiceClient
 	Secret       []byte
 )
 
@@ -23,10 +25,12 @@ func RetrieveSecret(secretString string) {
 	Secret = []byte(secretString)
 }
 
-func Initialize(usrconn pb.UserServiceClient, ordrconn pb.OrderServiceClient, prodConn pb.ProductServiceClient) {
+func Initialize(usrconn pb.UserServiceClient, ordrconn pb.OrderServiceClient, prodConn pb.ProductServiceClient, cartconn pb.CartServiceClient, wishlistconn pb.WishlistServiceClient) {
 	UsersrvConn = usrconn
 	OrdersConn = ordrconn
 	ProductsConn = prodConn
+	CartConn = cartconn
+	WishlistConn = wishlistconn
 }
 
 var UserType = graphql.NewObject(
@@ -90,6 +94,46 @@ var ProductType = graphql.NewObject(
 	},
 )
 
+var CartItemType = graphql.NewObject(
+	graphql.ObjectConfig{
+		Name: "cartItem",
+		Fields: graphql.Fields{
+			"product_id": &graphql.Field{
+				Type: graphql.Int,
+			},
+			"product": &graphql.Field{
+				Type: ProductType,
+			},
+			"quantity": &graphql.Field{
+				Type: graphql.Int,
+			},
+		},
+	},
+)
+
+var WishlistItemType = graphql.NewObject(
+	graphql.ObjectConfig{
+		Name: "wishlistItem",
+		Fields: graphql.Fields{
+			"product_id": &graphql.Field{
+				Type: graphql.Int,
+			},
+			"id": &graphql.Field{
+				Type: graphql.Int,
+			},
+			"name": &graphql.Field{
+				Type: graphql.String,
+			},
+			"price": &graphql.Field{
+				Type: graphql.Int,
+			},
+			"stock": &graphql.Field{
+				Type: graphql.Int,
+			},
+		},
+	},
+)
+
 var OrderType = graphql.NewObject(
 
 	graphql.ObjectConfig{
@@ -111,6 +155,17 @@ var OrderType = graphql.NewObject(
 		},
 	},
 )
+
+// var CartType = graphql.NewObject(
+
+// 	graphql.ObjectConfig{
+
+// 		Name: "cart",
+// 		Fields: graphql.Fields{
+
+// 		},
+// 	},
+// )
 
 var RootQuery = graphql.NewObject(
 	graphql.ObjectConfig{
@@ -192,26 +247,9 @@ var RootQuery = graphql.NewObject(
 				// 		Type: graphql.NewNonNull(graphql.ID),
 				// 	},
 				// },
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
-					r := p.Context.Value("request").(*http.Request)
-					cookie, err := r.Cookie("jwtToken")
-					if err != nil {
-						fmt.Println(err.Error())
-						return nil, err
-					}
-					if cookie == nil {
-						return nil, fmt.Errorf("you are not logged in")
-					}
-
-					token := cookie.Value
-					auth, err := authorize.ValidateToken(token, Secret)
-					if err != nil {
-						fmt.Println(err.Error())
-						return nil, err
-					}
-
-					userIDval := auth["userID"].(uint)
+					userIDval := p.Context.Value("userID").(uint)
 
 					user, err := UsersrvConn.GetUser(context.Background(), &pb.UserRequest{Id: uint32(userIDval)})
 					if err != nil {
@@ -224,7 +262,7 @@ var RootQuery = graphql.NewObject(
 					return OrdersConn.GetOrdersByUser(context.Background(), &pb.GetOrdersByUserRequest{
 						UserId: uint32(userIDval),
 					})
-				},
+				}),
 			},
 			"product": &graphql.Field{
 				Type: ProductType,
@@ -250,6 +288,31 @@ var RootQuery = graphql.NewObject(
 					}
 					return products.Products, err
 				},
+			},
+			"cart": &graphql.Field{
+				Type: graphql.NewList(CartItemType),
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+
+					userIDval := p.Context.Value("userID").(uint)
+
+					cart, err := CartConn.GetCart(context.TODO(), &pb.CartRequest{UserId: uint32(userIDval)})
+					if err != nil {
+						fmt.Println(err.Error())
+					}
+					return cart.Products, err
+				}),
+			},
+			"wishlist": &graphql.Field{
+				Type: graphql.NewList(WishlistItemType),
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+					userIDval := p.Context.Value("userID").(uint)
+					wishlist, err := WishlistConn.GetWishlist(context.TODO(), &pb.WishlistRequest{UserId: uint32(userIDval)})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+					return wishlist.Products, err
+				}),
 			},
 		},
 	},
@@ -282,6 +345,18 @@ var Mutation = graphql.NewObject(
 						Password: p.Args["password"].(string),
 						Mobile:   p.Args["mobile"].(string),
 					})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+
+					_, err = CartConn.CreateCart(context.TODO(), &pb.CartRequest{UserId: user.Id})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+
+					_, err = WishlistConn.CreateWishlist(context.TODO(), &pb.WishlistRequest{UserId: user.Id})
 					if err != nil {
 						fmt.Println(err.Error())
 						return nil, err
@@ -451,32 +526,11 @@ var Mutation = graphql.NewObject(
 					return admin, nil
 				}),
 			},
-			"addOrder": &graphql.Field{
+			"checkoutCart": &graphql.Field{
 				Type: OrderType,
-				Args: graphql.FieldConfigArgument{
-					"product_ids": &graphql.ArgumentConfig{
-						Type: graphql.NewList(graphql.Int),
-					},
-				},
-				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
-					r := p.Context.Value("request").(*http.Request)
-					cookie, err := r.Cookie("jwtToken")
-					if err != nil {
-						return nil, err
-					}
-					if cookie == nil {
-						return nil, fmt.Errorf("you are not logged in")
-					}
-
-					token := cookie.Value
-					auth, err := authorize.ValidateToken(token, Secret)
-					if err != nil {
-						fmt.Println(err.Error())
-						return nil, err
-					}
-
-					userIDval := auth["userID"].(uint)
+					userIDval := p.Context.Value("userID").(uint)
 
 					user, err := UsersrvConn.GetUser(context.Background(), &pb.UserRequest{Id: uint32(userIDval)})
 					if err != nil {
@@ -486,16 +540,33 @@ var Mutation = graphql.NewObject(
 						return nil, fmt.Errorf("Admin cannot order")
 					}
 
-					prodids := p.Args["product_ids"].([]interface{})
-					var productids []int32
-					for _, prod := range prodids {
-						productids = append(productids, int32(prod.(int)))
+					cart, err := CartConn.GetCart(context.TODO(), &pb.CartRequest{UserId: uint32(userIDval)})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
 					}
-					return OrdersConn.AddOrder(context.Background(), &pb.AddOrderRequest{
+					var productids []int32
+					for _, product := range cart.Products {
+						productids = append(productids, int32(product.Product.Id))
+					}
+
+					order, err := OrdersConn.AddOrder(context.Background(), &pb.AddOrderRequest{
 						UserId:     uint32(userIDval),
 						ProductIDs: productids,
 					})
-				},
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+
+					_, err = CartConn.TruncateCart(context.TODO(), &pb.CartRequest{UserId: uint32(userIDval)})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+
+					return order, nil
+				}),
 			},
 			"AddProduct": &graphql.Field{
 				Type: ProductType,
@@ -544,6 +615,137 @@ var Mutation = graphql.NewObject(
 						Stock:    p.Args["stock"].(int32),
 						Increase: p.Args["increase"].(bool),
 					})
+				}),
+			},
+			"addToCart": &graphql.Field{
+				Type: CartItemType,
+				Args: graphql.FieldConfigArgument{
+					"product_id": &graphql.ArgumentConfig{
+						Type: graphql.Int,
+					},
+					"quantity": &graphql.ArgumentConfig{
+						Type: graphql.Int,
+					},
+				},
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+
+					userIDval := p.Context.Value("userID").(uint)
+
+					cart, err := CartConn.AddtoCart(context.TODO(), &pb.AddtoCartRequest{
+						UserId:    uint32(userIDval),
+						ProductId: uint32(p.Args["product_id"].(int)),
+						Quantity:  int32(p.Args["quantity"].(int)),
+					})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+					return cart, nil
+				}),
+			},
+			"removeFromCart": &graphql.Field{
+				Type: CartItemType,
+				Args: graphql.FieldConfigArgument{
+					"product_id": &graphql.ArgumentConfig{
+						Type: graphql.Int,
+					},
+				},
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+
+					userIDval := p.Context.Value("userID").(uint)
+					cart, err := CartConn.DeleteCartItem(context.TODO(), &pb.AddtoCartRequest{
+						UserId:    uint32(userIDval),
+						ProductId: uint32(p.Args["product_id"].(int)),
+					})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+					return cart, nil
+				}),
+			},
+			"updateCartItemQty": &graphql.Field{
+				Type: CartItemType,
+				Args: graphql.FieldConfigArgument{
+					"product_id": &graphql.ArgumentConfig{
+						Type: graphql.Int,
+					},
+					"quantity": &graphql.ArgumentConfig{
+						Type: graphql.Int,
+					},
+					"isIncreasing": &graphql.ArgumentConfig{
+						Type: graphql.Boolean,
+					},
+				},
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+
+					userIDval := p.Context.Value("userID").(uint)
+					cart, err := CartConn.ChangeQty(context.TODO(), &pb.ChangeQtyRequest{
+						UserId:     uint32(userIDval),
+						ProductId:  uint32(p.Args["product_id"].(int)),
+						Quantity:   int32(p.Args["quantity"].(int)),
+						IsIncrease: p.Args["isIncreasing"].(bool),
+					})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+					return cart, nil
+				}),
+			},
+			"addToWishlist": &graphql.Field{
+				Type: WishlistItemType,
+				Args: graphql.FieldConfigArgument{
+					"product_id": &graphql.ArgumentConfig{
+						Type: graphql.Int,
+					},
+				},
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+
+					userIDval := p.Context.Value("userID").(uint)
+					wishlist, err := WishlistConn.AddtoWishlist(context.TODO(), &pb.AddtoWishlistRequest{
+						UserId:    uint32(userIDval),
+						ProductId: uint32(p.Args["product_id"].(int)),
+					})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+					return wishlist, nil
+				}),
+			},
+			"removeWishlistItem": &graphql.Field{
+				Type: WishlistItemType,
+				Args: graphql.FieldConfigArgument{
+					"product_id": &graphql.ArgumentConfig{
+						Type: graphql.Int,
+					},
+				},
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+
+					userIDval := p.Context.Value("userID").(uint)
+					wishlist, err := WishlistConn.DeleteWishlistItem(context.TODO(), &pb.AddtoWishlistRequest{
+						UserId:    uint32(userIDval),
+						ProductId: uint32(p.Args["product_id"].(int)),
+					})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+					return wishlist, nil
+				}),
+			},
+			"transferToCart": &graphql.Field{
+				Type: CartItemType,
+				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+
+					userIDval := p.Context.Value("userID").(uint)
+					cart, err := CartConn.TrasferWishlist(context.TODO(), &pb.CartRequest{UserId: uint32(userIDval)})
+					if err != nil {
+						fmt.Println(err.Error())
+						return nil, err
+					}
+					return cart, nil
 				}),
 			},
 		},
