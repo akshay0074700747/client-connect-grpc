@@ -6,6 +6,8 @@ WORKDIR /app
 
 RUN echo client-connect
 
+RUN echo client-connect
+
 RUN git clone https://github.com/akshay0074700747/client-connect-grpc.git .
 
 RUN go mod download

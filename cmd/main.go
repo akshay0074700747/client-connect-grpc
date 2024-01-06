@@ -16,27 +16,27 @@ import (
 
 func main() {
 
-	userconn, err := grpc.Dial(":50002", grpc.WithInsecure())
+	userconn, err := grpc.Dial("user-service:50002", grpc.WithInsecure())
 	if err != nil {
 		log.Println(err.Error())
 	}
 
-	orderConn, err := grpc.Dial(":50003", grpc.WithInsecure())
+	orderConn, err := grpc.Dial("order-service:50003", grpc.WithInsecure())
 	if err != nil {
 		log.Println(err.Error())
 	}
 
-	productConn, err := grpc.Dial(":50004", grpc.WithInsecure())
+	productConn, err := grpc.Dial("product-service:50004", grpc.WithInsecure())
 	if err != nil {
 		log.Println(err.Error())
 	}
 
-	cartConn, err := grpc.Dial(":50006", grpc.WithInsecure())
+	cartConn, err := grpc.Dial("cart-service:50006", grpc.WithInsecure())
 	if err != nil {
 		log.Println(err.Error())
 	}
 
-	wishlistConn, err := grpc.Dial(":50007", grpc.WithInsecure())
+	wishlistConn, err := grpc.Dial("wishlist-service:50007", grpc.WithInsecure())
 	if err != nil {
 		log.Println(err.Error())
 	}
