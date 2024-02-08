@@ -2,41 +2,45 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 
 	"github.com/akshay0074700747/client-connect/graaph"
 	"github.com/akshay0074700747/client-connect/middleware"
+	servicediscoveryconsul "github.com/akshay0074700747/client-connect/servicediscovery_consul"
 	"github.com/akshay0074700747/proto-files-for-microservices/pb"
 	"github.com/graphql-go/handler"
 	"github.com/joho/godotenv"
-	"google.golang.org/grpc"
+	"github.com/opentracing/opentracing-go"
+	"github.com/uber/jaeger-client-go"
+	"github.com/uber/jaeger-client-go/config"
 )
 
 func main() {
 
-	userconn, err := grpc.Dial("user-service:50002", grpc.WithInsecure())
+	userconn, err := servicediscoveryconsul.GetService("user-service")
 	if err != nil {
 		log.Println(err.Error())
 	}
 
-	orderConn, err := grpc.Dial("order-service:50003", grpc.WithInsecure())
+	orderConn, err := servicediscoveryconsul.GetService("order-service")
 	if err != nil {
 		log.Println(err.Error())
 	}
 
-	productConn, err := grpc.Dial("product-service:50004", grpc.WithInsecure())
+	productConn, err := servicediscoveryconsul.GetService("product-service")
 	if err != nil {
 		log.Println(err.Error())
 	}
 
-	cartConn, err := grpc.Dial("cart-service:50006", grpc.WithInsecure())
+	cartConn, err := servicediscoveryconsul.GetService("cart-service")
 	if err != nil {
 		log.Println(err.Error())
 	}
-
-	wishlistConn, err := grpc.Dial("wishlist-service:50007", grpc.WithInsecure())
+	wishlistConn, err := servicediscoveryconsul.GetService("wishlist-service")
 	if err != nil {
 		log.Println(err.Error())
 	}
@@ -94,6 +98,37 @@ func main() {
 
 	log.Println("listening on port :50001 of api gateway")
 
+	tracer, closer := initTracer()
+
+	defer closer.Close()
+
+	graaph.RetrieveTracer(tracer)
+
+	fmt.Println("hi")
+
 	http.ListenAndServe(":50001", nil)
 
+}
+
+func initTracer() (tracer opentracing.Tracer, closer io.Closer) {
+	jaegerEndpoint := "http://localhost:14268/api/traces"
+
+	cfg := &config.Configuration{
+		ServiceName: "api-gateway",
+		Sampler: &config.SamplerConfig{
+			Type:  jaeger.SamplerTypeConst,
+			Param: 1,
+		},
+		Reporter: &config.ReporterConfig{
+			LogSpans:          true,
+			CollectorEndpoint: jaegerEndpoint,
+		},
+	}
+
+	tracer, closer, err := cfg.NewTracer()
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
+	return
 }

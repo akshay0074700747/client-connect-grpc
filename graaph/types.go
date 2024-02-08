@@ -3,12 +3,14 @@ package graaph
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/akshay0074700747/client-connect/authorize"
 	"github.com/akshay0074700747/client-connect/middleware"
 	"github.com/akshay0074700747/proto-files-for-microservices/pb"
 	"github.com/graphql-go/graphql"
+	"github.com/opentracing/opentracing-go"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -19,10 +21,15 @@ var (
 	CartConn     pb.CartServiceClient
 	WishlistConn pb.WishlistServiceClient
 	Secret       []byte
+	Tracer       opentracing.Tracer
 )
 
 func RetrieveSecret(secretString string) {
 	Secret = []byte(secretString)
+}
+
+func RetrieveTracer(tr opentracing.Tracer) {
+	Tracer = tr
 }
 
 func Initialize(usrconn pb.UserServiceClient, ordrconn pb.OrderServiceClient, prodConn pb.ProductServiceClient, cartconn pb.CartServiceClient, wishlistconn pb.WishlistServiceClient) {
@@ -174,22 +181,58 @@ var RootQuery = graphql.NewObject(
 			"users": &graphql.Field{
 				Type: graphql.NewList(UserType),
 				Resolve: middleware.SuAdminOrAdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
-					users, err := UsersrvConn.GetAllUsersResponce(context.Background(), &emptypb.Empty{})
+
+					span := Tracer.StartSpan("get all users")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					users, err := UsersrvConn.GetAllUsersResponce(ctx, &emptypb.Empty{})
 					if err != nil {
 						fmt.Println(err.Error())
+						return nil, err
 					}
-					return users.Users, err
+					var userss []*pb.UserResponce
+					for {
+						user, err := users.Recv()
+						if err == io.EOF {
+							break
+						}
+						if err != nil {
+							fmt.Println(err)
+							return nil, err
+						}
+						userss = append(userss, user)
+					}
+					return userss, nil
 				}),
 			},
 
 			"admins": &graphql.Field{
 				Type: graphql.NewList(UserType),
 				Resolve: middleware.SuAdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
-					admins, err := UsersrvConn.GetAllAdminsResponce(context.Background(), &emptypb.Empty{})
+
+					span := Tracer.StartSpan("get all admins")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					admins, err := UsersrvConn.GetAllAdminsResponce(ctx, &emptypb.Empty{})
 					if err != nil {
 						fmt.Println(err.Error())
+						return nil, err
 					}
-					return admins.Users, err
+					var adminss []*pb.UserResponce
+					for {
+						admin, err := admins.Recv()
+						if err == io.EOF {
+							break
+						}
+						if err != nil {
+							fmt.Println(err)
+							return nil, err
+						}
+						adminss = append(adminss, admin)
+					}
+					return adminss, nil
 				}),
 			},
 
@@ -201,7 +244,12 @@ var RootQuery = graphql.NewObject(
 					},
 				},
 				Resolve: middleware.SuAdminOrAdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
-					return UsersrvConn.GetUser(context.Background(), &pb.UserRequest{Id: uint32(p.Args["id"].(int))})
+
+					span := Tracer.StartSpan("get user")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					return UsersrvConn.GetUser(ctx, &pb.UserRequest{Id: uint32(p.Args["id"].(int))})
 				}),
 			},
 			"admin": &graphql.Field{
@@ -212,16 +260,25 @@ var RootQuery = graphql.NewObject(
 					},
 				},
 				Resolve: middleware.SuAdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
-					return UsersrvConn.GetAdmin(context.Background(), &pb.UserRequest{Id: uint32(p.Args["id"].(int))})
+
+					span := Tracer.StartSpan("get admin")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					return UsersrvConn.GetAdmin(ctx, &pb.UserRequest{Id: uint32(p.Args["id"].(int))})
 				}),
 			},
 			"userDetails": &graphql.Field{
 				Type: UserType,
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("get user details")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
 
-					user, err := UsersrvConn.GetUser(context.Background(), &pb.UserRequest{Id: uint32(userIDval)})
+					user, err := UsersrvConn.GetUser(ctx, &pb.UserRequest{Id: uint32(userIDval)})
 					if err != nil {
 						fmt.Println(err.Error())
 					}
@@ -232,12 +289,30 @@ var RootQuery = graphql.NewObject(
 			"orders": &graphql.Field{
 				Type: graphql.NewList(OrderType),
 				Resolve: middleware.AdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
-					orders, err := OrdersConn.GetAllOrdersResponce(context.Background(), &emptypb.Empty{})
+
+					span := Tracer.StartSpan("get all orders")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					orders, err := OrdersConn.GetAllOrdersResponce(ctx, &emptypb.Empty{})
 					if err != nil {
 						fmt.Println(err.Error())
+						return nil, err
+					}
+					var orderss []*pb.AddOrderResponce
+					for {
+						order, err := orders.Recv()
+						if err == io.EOF {
+							break
+						}
+						if err != nil {
+							fmt.Println(err)
+							return nil, err
+						}
+						orderss = append(orderss, order)
 					}
 
-					return orders.Orders, err
+					return orderss, nil
 				}),
 			},
 			"order": &graphql.Field{
@@ -249,9 +324,13 @@ var RootQuery = graphql.NewObject(
 				// },
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("get order")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
 
-					user, err := UsersrvConn.GetUser(context.Background(), &pb.UserRequest{Id: uint32(userIDval)})
+					user, err := UsersrvConn.GetUser(ctx, &pb.UserRequest{Id: uint32(userIDval)})
 					if err != nil {
 						return nil, err
 					}
@@ -259,7 +338,7 @@ var RootQuery = graphql.NewObject(
 						return nil, fmt.Errorf("user is not signed up")
 					}
 
-					return OrdersConn.GetOrdersByUser(context.Background(), &pb.GetOrdersByUserRequest{
+					return OrdersConn.GetOrdersByUser(ctx, &pb.GetOrdersByUserRequest{
 						UserId: uint32(userIDval),
 					})
 				}),
@@ -273,7 +352,11 @@ var RootQuery = graphql.NewObject(
 				},
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 
-					return ProductsConn.GetProduct(context.Background(), &pb.GetProductByID{
+					span := Tracer.StartSpan("get product")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					return ProductsConn.GetProduct(ctx, &pb.GetProductByID{
 						Id: uint32(p.Args["id"].(int)),
 					})
 				},
@@ -282,36 +365,87 @@ var RootQuery = graphql.NewObject(
 				Type: graphql.NewList(ProductType),
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
 
-					products, err := ProductsConn.GetAllProducts(context.Background(), &emptypb.Empty{})
+					span := Tracer.StartSpan("get all users")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					products, err := ProductsConn.GetAllProducts(ctx, &emptypb.Empty{})
 					if err != nil {
 						fmt.Println(err.Error())
+						return nil, err
 					}
-					return products.Products, err
+					var productss []*pb.AddProductResponce
+					for {
+						product, err := products.Recv()
+						if err == io.EOF {
+							break
+						}
+						if err != nil {
+							fmt.Println(err)
+							return nil, err
+						}
+						productss = append(productss, product)
+					}
+					return productss, nil
 				},
 			},
 			"cart": &graphql.Field{
 				Type: graphql.NewList(CartItemType),
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("get cart")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
 
-					cart, err := CartConn.GetCart(context.TODO(), &pb.CartRequest{UserId: uint32(userIDval)})
+					cart, err := CartConn.GetCart(ctx, &pb.CartRequest{UserId: uint32(userIDval)})
 					if err != nil {
 						fmt.Println(err.Error())
+						return nil, err
 					}
-					return cart.Products, err
+					var cartss []*pb.AddtoCartResponce
+					for {
+						item, err := cart.Recv()
+						if err == io.EOF {
+							break
+						}
+						if err != nil {
+							fmt.Println(err)
+							return nil, err
+						}
+						cartss = append(cartss, item)
+					}
+					return cartss, nil
 				}),
 			},
 			"wishlist": &graphql.Field{
 				Type: graphql.NewList(WishlistItemType),
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
+
+					span := Tracer.StartSpan("get wishlist")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
-					wishlist, err := WishlistConn.GetWishlist(context.TODO(), &pb.WishlistRequest{UserId: uint32(userIDval)})
+					wishlist, err := WishlistConn.GetWishlist(ctx, &pb.WishlistRequest{UserId: uint32(userIDval)})
 					if err != nil {
 						fmt.Println(err.Error())
 						return nil, err
 					}
-					return wishlist.Products, err
+					var wishh []*pb.AddProductResponce
+					for {
+						item, err := wishlist.Recv()
+						if err == io.EOF {
+							break
+						}
+						if err != nil {
+							fmt.Println(err)
+							return nil, err
+						}
+						wishh = append(wishh, item)
+					}
+					return wishh, nil
 				}),
 			},
 		},
@@ -339,7 +473,12 @@ var Mutation = graphql.NewObject(
 					},
 				},
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					user, err := UsersrvConn.SignupUser(context.Background(), &pb.SignupUserRequest{
+
+					span := Tracer.StartSpan("signup user")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					user, err := UsersrvConn.SignupUser(ctx, &pb.SignupUserRequest{
 						Name:     p.Args["name"].(string),
 						Email:    p.Args["email"].(string),
 						Password: p.Args["password"].(string),
@@ -350,13 +489,13 @@ var Mutation = graphql.NewObject(
 						return nil, err
 					}
 
-					_, err = CartConn.CreateCart(context.TODO(), &pb.CartRequest{UserId: user.Id})
+					_, err = CartConn.CreateCart(ctx, &pb.CartRequest{UserId: user.Id})
 					if err != nil {
 						fmt.Println(err.Error())
 						return nil, err
 					}
 
-					_, err = WishlistConn.CreateWishlist(context.TODO(), &pb.WishlistRequest{UserId: user.Id})
+					_, err = WishlistConn.CreateWishlist(ctx, &pb.WishlistRequest{UserId: user.Id})
 					if err != nil {
 						fmt.Println(err.Error())
 						return nil, err
@@ -390,7 +529,12 @@ var Mutation = graphql.NewObject(
 					},
 				},
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					user, err := UsersrvConn.LoginUser(context.Background(), &pb.LoginRequest{
+
+					span := Tracer.StartSpan("login user")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					user, err := UsersrvConn.LoginUser(ctx, &pb.LoginRequest{
 						Email:     p.Args["email"].(string),
 						Password:  p.Args["password"].(string),
 						IsAdmin:   false,
@@ -429,7 +573,12 @@ var Mutation = graphql.NewObject(
 					},
 				},
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					user, err := UsersrvConn.LoginUser(context.Background(), &pb.LoginRequest{
+
+					span := Tracer.StartSpan("login admin")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					user, err := UsersrvConn.LoginUser(ctx, &pb.LoginRequest{
 						Email:     p.Args["email"].(string),
 						Password:  p.Args["password"].(string),
 						IsAdmin:   true,
@@ -468,7 +617,12 @@ var Mutation = graphql.NewObject(
 					},
 				},
 				Resolve: func(p graphql.ResolveParams) (interface{}, error) {
-					user, err := UsersrvConn.LoginUser(context.Background(), &pb.LoginRequest{
+
+					span := Tracer.StartSpan("login suAdmin")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					user, err := UsersrvConn.LoginUser(ctx, &pb.LoginRequest{
 						Email:     p.Args["email"].(string),
 						Password:  p.Args["password"].(string),
 						IsAdmin:   false,
@@ -513,7 +667,12 @@ var Mutation = graphql.NewObject(
 					},
 				},
 				Resolve: middleware.SuAdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
-					admin, err := UsersrvConn.AddAdmin(context.Background(), &pb.SignupUserRequest{
+
+					span := Tracer.StartSpan("add admin")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					admin, err := UsersrvConn.AddAdmin(ctx, &pb.SignupUserRequest{
 						Name:     p.Args["name"].(string),
 						Email:    p.Args["email"].(string),
 						Password: p.Args["password"].(string),
@@ -530,9 +689,13 @@ var Mutation = graphql.NewObject(
 				Type: OrderType,
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("checkout cart")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
 
-					user, err := UsersrvConn.GetUser(context.Background(), &pb.UserRequest{Id: uint32(userIDval)})
+					user, err := UsersrvConn.GetUser(ctx, &pb.UserRequest{Id: uint32(userIDval)})
 					if err != nil {
 						return nil, err
 					}
@@ -540,26 +703,37 @@ var Mutation = graphql.NewObject(
 						return nil, fmt.Errorf("Admin cannot order")
 					}
 
-					cart, err := CartConn.GetCart(context.TODO(), &pb.CartRequest{UserId: uint32(userIDval)})
+					cart, err := CartConn.GetCart(ctx, &pb.CartRequest{UserId: uint32(userIDval)})
 					if err != nil {
 						fmt.Println(err.Error())
 						return nil, err
 					}
-					var productids []int32
-					for _, product := range cart.Products {
-						productids = append(productids, int32(product.Product.Id))
+					var products []*pb.ProductwithQuantity
+					for {
+						item, err := cart.Recv()
+						if err == io.EOF {
+							break
+						}
+						if err != nil {
+							fmt.Println(err)
+							return nil, err
+						}
+						products = append(products, &pb.ProductwithQuantity{
+							Id:       item.Product.Id,
+							Quantity: uint32(item.Quantity),
+						})
 					}
 
-					order, err := OrdersConn.AddOrder(context.Background(), &pb.AddOrderRequest{
-						UserId:     uint32(userIDval),
-						ProductIDs: productids,
+					order, err := OrdersConn.AddOrder(ctx, &pb.AddOrderRequest{
+						UserId:   uint32(userIDval),
+						Products: products,
 					})
 					if err != nil {
 						fmt.Println(err.Error())
 						return nil, err
 					}
 
-					_, err = CartConn.TruncateCart(context.TODO(), &pb.CartRequest{UserId: uint32(userIDval)})
+					_, err = CartConn.TruncateCart(ctx, &pb.CartRequest{UserId: uint32(userIDval)})
 					if err != nil {
 						fmt.Println(err.Error())
 						return nil, err
@@ -583,8 +757,12 @@ var Mutation = graphql.NewObject(
 				},
 				Resolve: middleware.AdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("add product")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					fmt.Println("here reached...")
-					products, err := ProductsConn.AddProducts(context.Background(), &pb.AddProductRequest{
+					products, err := ProductsConn.AddProducts(ctx, &pb.AddProductRequest{
 						Name:  p.Args["name"].(string),
 						Price: int32(p.Args["price"].(int)),
 						Stock: int32(p.Args["stock"].(int)),
@@ -610,7 +788,11 @@ var Mutation = graphql.NewObject(
 				},
 				Resolve: middleware.AdminMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
-					return ProductsConn.UpdateStock(context.Background(), &pb.UpdateStockRequest{
+					span := Tracer.StartSpan("update stock")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
+					return ProductsConn.UpdateStock(ctx, &pb.UpdateStockRequest{
 						Id:       p.Args["id"].(uint32),
 						Stock:    p.Args["stock"].(int32),
 						Increase: p.Args["increase"].(bool),
@@ -629,9 +811,13 @@ var Mutation = graphql.NewObject(
 				},
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("add to cart")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
 
-					cart, err := CartConn.AddtoCart(context.TODO(), &pb.AddtoCartRequest{
+					cart, err := CartConn.AddtoCart(ctx, &pb.AddtoCartRequest{
 						UserId:    uint32(userIDval),
 						ProductId: uint32(p.Args["product_id"].(int)),
 						Quantity:  int32(p.Args["quantity"].(int)),
@@ -652,8 +838,12 @@ var Mutation = graphql.NewObject(
 				},
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("remove from cart")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
-					cart, err := CartConn.DeleteCartItem(context.TODO(), &pb.AddtoCartRequest{
+					cart, err := CartConn.DeleteCartItem(ctx, &pb.AddtoCartRequest{
 						UserId:    uint32(userIDval),
 						ProductId: uint32(p.Args["product_id"].(int)),
 					})
@@ -679,8 +869,12 @@ var Mutation = graphql.NewObject(
 				},
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("update cart item qty")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
-					cart, err := CartConn.ChangeQty(context.TODO(), &pb.ChangeQtyRequest{
+					cart, err := CartConn.ChangeQty(ctx, &pb.ChangeQtyRequest{
 						UserId:     uint32(userIDval),
 						ProductId:  uint32(p.Args["product_id"].(int)),
 						Quantity:   int32(p.Args["quantity"].(int)),
@@ -702,8 +896,12 @@ var Mutation = graphql.NewObject(
 				},
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("add to wishlist")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
-					wishlist, err := WishlistConn.AddtoWishlist(context.TODO(), &pb.AddtoWishlistRequest{
+					wishlist, err := WishlistConn.AddtoWishlist(ctx, &pb.AddtoWishlistRequest{
 						UserId:    uint32(userIDval),
 						ProductId: uint32(p.Args["product_id"].(int)),
 					})
@@ -723,8 +921,12 @@ var Mutation = graphql.NewObject(
 				},
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("remove wishlist item")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
-					wishlist, err := WishlistConn.DeleteWishlistItem(context.TODO(), &pb.AddtoWishlistRequest{
+					wishlist, err := WishlistConn.DeleteWishlistItem(ctx, &pb.AddtoWishlistRequest{
 						UserId:    uint32(userIDval),
 						ProductId: uint32(p.Args["product_id"].(int)),
 					})
@@ -739,8 +941,12 @@ var Mutation = graphql.NewObject(
 				Type: CartItemType,
 				Resolve: middleware.ClientMiddleware(func(p graphql.ResolveParams) (interface{}, error) {
 
+					span := Tracer.StartSpan("transfer to cart")
+					defer span.Finish()
+					ctx := opentracing.ContextWithSpan(context.Background(), span)
+
 					userIDval := p.Context.Value("userID").(uint)
-					cart, err := CartConn.TrasferWishlist(context.TODO(), &pb.CartRequest{UserId: uint32(userIDval)})
+					cart, err := CartConn.TrasferWishlist(ctx, &pb.CartRequest{UserId: uint32(userIDval)})
 					if err != nil {
 						fmt.Println(err.Error())
 						return nil, err
